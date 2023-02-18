@@ -1,14 +1,14 @@
 # RPC
+
 RPC远程调用框架
 
 # 使用示例
+
 直接运行 autobuild.sh
 
 作者：gzf66666
 
 邮箱：gzf66666@foxmail.com
-
-时间：2023/2/14 19:38
 
 开发环境：Ubuntu VS Code
 
@@ -17,11 +17,13 @@ RPC远程调用框架
 编程语言：C++
 
 # 认识RPC
+
 RPC的全称是**远程过程调用**（Remote Procedure Call）。
 
 什么是远程过程调用呢？
 
 那么对于一个聊天系统有`int send_information(int friend_id,string msg)`这个方法，我们的一个处理逻辑是不是这样：
+
 * 调用`bool is_exist(int friend_id)`判断用户是否在线
 * 根据结果在决议是发送在线消息还是离线消息。
 
@@ -30,12 +32,14 @@ RPC的全称是**远程过程调用**（Remote Procedure Call）。
 但是如果考虑**高并发、高可用以及系统扩展性**的话，那我们不得不引入分布式的设计。这意味这，登录和聊天会部署在不同的机器上！那么要完成上面的逻辑，就不得不依靠网络，将要调用的函数名以及参数通过网络打包发送给另一个机器，然后由另一台机器将结果发过来。
 
 而我们要做的RPC框架就是为使这个过程更好用而设计的。
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20210418224832597.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3NoZW5taW5neHVlSVQ=,size_16,color_FFFFFF,t_70)
+![image-20230218165535399](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20230218165535399.png)
 
 # RPC框架的设计
+
 博文的标题是基于 protobuf 和 zookeeper 的RPC框架，那么protobuf 和 zookeeper又在整个框架啊中扮演怎样的角色呢？
 
 ## protobuf 作用
+
 protobuf 主要是作为整个框架的传输协议。我们可以看一下整个框架对于传输信息的格式定义：
 
 ```cpp
@@ -46,12 +50,14 @@ message RpcHeader
     uint32 args_size = 3;		//参数大小
 }
 ```
+
 可以看到，它**定义了要调用方法是属于哪个类的哪个方法以及这个方法所需要的的参数大小**。
 
 那么参数呢？是怎样定义的？
 
 首先我们来看一下我们框架内传输的数据是什么：
 **4字节标识头部长度+RpcHeader+args**
+
 ```cpp
 /*
 * 16表示整个类名+方法名+参数长度的大小
@@ -68,18 +74,20 @@ message RpcHeader
 > 如果还是有点迷糊，可以保留参数解释信息，看到后面就大致懂了
 
 ## zookeeper
+
 zookeeper 呢在这里其实主要就是起到了一个**配置中心**的目的。
 
 什么意思呢？
 
 zookeeper上面我们标识了每个类的方法所对应的**分布式节点地址**，当我们其他服务器想要RPC的时候，就去 zookeeper 上面查询对应要调用的服务在哪个节点上。
 
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20210417231712876.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3NoZW5taW5neHVlSVQ=,size_16,color_FFFFFF,t_70)
+![image-20230218170901904](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20230218170901904.png)
 
 > **注意：**
 > 这里就相当于，我其他服务器来 zookeeper 查询`User::is_exist` ，然后会得到127.0.0.1：8001 这个值，这个值就是你布置这个功能的一个RPC节点的网络标识符，然后向这个节点去发送参数并且等待这个节点的相应。
 
 ## 从框架的使用来认识
+
 框架的使用一般都是在example目录下的 `callee/UserService.cpp` 里面
 
 ```cpp
@@ -90,7 +98,9 @@ zookeeper上面我们标识了每个类的方法所对应的**分布式节点地
     provide.notify_service(new UserService());
     provide.run();
 ```
+
 可以看到，主要去做了三个事情：
+
 * 首先 RPC 框架肯定是部署到一台服务器上的，所以我们需要对这个服务器的 ip 和 port 进行初始化
 * 然后创建一个 porvider（也就是server）对象，将当前 UserService 这个对象传递给他，也就是其实这个 RPC 框架和我们执行具体业务的节点是在同一个服务器上的。RPC框架负责解析其他服务器传递过来的请求，然后将这些参数传递给本地的方法。并将返回值返回给其他服务器。
 * 最后是去让这个 provider 去 run 起来。具体我们其实可以看一下源代码：
@@ -139,14 +149,17 @@ void RpcProvider::run()
     eventloop_.loop();
 }
 ```
+
 可以看到，整个 run 其实就是干了这么几件事情：
+
 * 因为底层调用的是muduo网络库，所以这里会获取ip地址和端口号，然后初始化网络层
 * 然后去设置一个连接回调以及发生读写事件时候的回调函数（稍后介绍）
-*  然后设置整个 muduo 网络库工作的线程数量
+* 然后设置整个 muduo 网络库工作的线程数量
 * 然后创建zookeeper配置中心，将这些方法的信息以及本机的IP地址注册到zookeeper
 * 然后开启本机服务器的事件循环，等待其他服务器的连接
 
 ### 其他服务器是怎样调用的呢
+
 我们看一下 example 目录下的 caller/CallUserService.cpp 里面是怎样调用的。
 
 ```cpp
@@ -178,10 +191,11 @@ void RpcProvider::run()
         cout << "rpc login response errer: " << response.errmsg().error_msg() << endl;
     }
 ```
+
 同样，也是有以下几个步骤：
+
 * 初始化 RPC 远程调用要连接的服务器
 * 定义一个 UserSeervice 的 stub 桩类，由这个装类去调用Login方法，这个login方法可以去看一下源码的定义：
-	
 
 ```cpp
     //重写基类UserServiceRpc的虚函数，供框架调用
@@ -207,6 +221,7 @@ void RpcProvider::run()
         done->Run();
     }
 ```
+
 可以看到，Login的 RPC 重载函数有四个参数：**controller（表示函数是否出错）、request（参数）、response（返回值）、done（回调函数）**
 其主要做的也是去围绕着解析参数，将参数放入本地调用的方法，将结果返回并执行回调函数。至于这个回调函数则是在服务端执行读写事件回调函数绑定的。
 
@@ -231,9 +246,11 @@ void RpcProvider::send_rpc_response(const TcpConnectionPtr &conn, google::protob
     conn->shutdown();
 }
 ```
+
 它会将由`bind`函数绑定的参数：`response_str` 发送回去，然后调用方的服务器就会收到这个返回值并解析它。
 
 #### 桩类是干嘛的
+
 那么其实现在来说，我们并没有看到调用方是何时发送了要调用方法以及相应参数？
 
 我们还是需要去返回桩类，这个是由 **protobuf** 自动去帮你生成的。
@@ -264,6 +281,7 @@ class UserServiceRpc_Stub : public UserServiceRpc {
   GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(UserServiceRpc_Stub);
 };
 ```
+
 我们在定义桩类的时候，会传入一个RpcCannel的指针，这个绑定到这个桩类的channel_指针。
 当我们去调用这个桩类的`Login`方法的时候，会去调用传递进来的channel的`CallMethod`方法：
 
@@ -276,6 +294,7 @@ void UserServiceRpc_Stub::Login(::google::protobuf::RpcController* controller,
                        controller, request, response, done);
 }
 ```
+
 所以，显而易见，我去发送这些方法啊，参数啊，都是在`CallMethod`这个方法中执行的。
 
 那么`CallMethod`里面执行的内容对我们理解RPC调用体系至关重要（代码比较长，可以直接跳过听结论）：
@@ -398,12 +417,13 @@ void RpcChannel::CallMethod(const google::protobuf::MethodDescriptor *method,
     close(client_fd);
 }
 ```
+
 * 组织要发送的 request_str 字符串
 * 从zookeeper中拿到服务端的 ip 和 port，连接服务端
 * 发送 request_str
 * 接受服务端返回过来的 response 字符串并反序列化出结果
 
 # 总结一下RPC流程
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20210418224541734.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3NoZW5taW5neHVlSVQ=,size_16,color_FFFFFF,t_70)
-# 参考文献
-	[1] 施磊.分布式网络通信RPC框架.腾讯课堂
+
+![image-20230218165724563](C:\Users\Lenovo\AppData\Roaming\Typora\typora-user-images\image-20230218165724563.png)
+
